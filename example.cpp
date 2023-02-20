@@ -9,7 +9,14 @@ Ret common_function(Ctx& ctx, int* code, std::string* msg)
     cout << "Missing args" << endl;
     return {};
   }
-  cout << "code:" << *code << " msg:" << *msg << endl;
+
+  cout << "code:" << *code << " msg:" << *msg;
+
+  // Get all remain arguments
+  while (ctx.has_rest_arg())
+    cout << " arg:" << ctx.get_rest_arg();
+
+  cout << endl;
   return {};
 }
 
@@ -156,7 +163,7 @@ int main()
                        });
 
   // Test
-  apis.Test("/hello/1/text/ignore");
+  apis.Test("/hello/1/text/ignore/ignore/ignore");
   cout << endl;
   apis.Test("/hello/2/text2/ignore");
   cout << endl;

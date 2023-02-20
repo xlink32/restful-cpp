@@ -42,7 +42,9 @@ struct Ctx
   Ctx() {}
   ~Ctx() {}
 
-  std::string get_rest()
+  bool has_rest_arg() const { return rest_begin != std::string::npos; }
+
+  std::string get_rest_arg()
   {
     if (rest_begin == std::string::npos || rest_begin >= url.size())
       return {};
@@ -274,7 +276,7 @@ namespace Restful
           std::vector<void*> args;
           args.reserve(sizeof...(Args));
           for (int i = 0; i < sizeof...(Args); ++i)
-            args.emplace_back(convertors[i](ctx.get_rest()));
+            args.emplace_back(convertors[i](ctx.get_rest_arg()));
 
 #if REST_GCC
           Return_t ret = details::invoker<sizeof...(Args), decltype(callback), std::tuple<Args...>>()(
