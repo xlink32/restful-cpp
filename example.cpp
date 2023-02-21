@@ -1,16 +1,16 @@
 #include "restful.hpp"
 using namespace std;
 
-Ret common_function(Ctx& ctx, int* code, std::string* msg)
+Ret common_function(Ctx& ctx, int* a, double* b, std::string* c)
 {
   cout << "[common_function] ";
-  if (!code || !msg)
+  if (!a || !b || !c)
   {
     cout << "Missing args" << endl;
     return {};
   }
 
-  cout << "code:" << *code << " msg:" << *msg;
+  cout << "a:" << *a << " b:" << *b << " c:" << *c;
 
   // Get all remain arguments
   while (ctx.has_rest_arg())
@@ -163,9 +163,9 @@ int main()
                        });
 
   // Test
-  apis.Test("/hello/1/text/ignore/ignore/ignore");
+  apis.Test("/hello/1/2/text/ignore/ignore");
   cout << endl;
-  apis.Test("/hello/2/text2/ignore");
+  apis.Test("/hello/1/2/text/arg3");
   cout << endl;
   apis.Test("/hello/1/text");
   cout << endl;

@@ -5,12 +5,12 @@ An example of Restful supporting variable parameters based on C++14. Example:
 ```c++
 Restful::Apis apis;
 apis.RegisterRestful("/hello",
-                    [&](Ctx& ctx, int* a, std::string* b) -> Ret
+                    [&](Ctx& ctx, int* a, double* b, std::string* c) -> Ret
                     {
-                      if (!code || !a || !b)
+                      if (!a || !b || !c)
                         ...
 
-                      std::cout << "a:" << *a << " b:" << *b;
+                      std::cout << "a:" << *a << " b:" << *b << " c:" << *c;
 
                       // Get all remain arguments
                       while (ctx.has_rest_arg())
@@ -20,7 +20,7 @@ apis.RegisterRestful("/hello",
                       ...
                     });
 
-apis.Test("/hello/123/text/arg3/arg4"); // out "a:123 b:text arg:arg3 arg:arg4"
+apis.Test("/hello/1/2/text/arg3/arg4"); // out "a:1 b:2 c:text arg:arg3 arg:arg4"
 ```
 
 # Requirements

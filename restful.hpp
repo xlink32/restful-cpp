@@ -85,9 +85,27 @@ namespace Restful
     }
 
     template<>
+    inline void* convert<long>(std::string&& src)
+    {
+      return src.empty() ? nullptr : new long(std::atol(src.data()));
+    }
+
+    template<>
+    inline void* convert<long long>(std::string&& src)
+    {
+      return src.empty() ? nullptr : new long long(std::atoll(src.data()));
+    }
+
+    template<>
     inline void* convert<float>(std::string&& src)
     {
       return src.empty() ? nullptr : new float(std::atof(src.data()));
+    }
+
+    template<>
+    inline void* convert<double>(std::string&& src)
+    {
+      return src.empty() ? nullptr : new double(std::atof(src.data()));
     }
 
     template<>
@@ -110,7 +128,10 @@ namespace Restful
   }
 
     MAKE_DEFAULT_CLEANER(int);
+    MAKE_DEFAULT_CLEANER(long);
+    MAKE_DEFAULT_CLEANER(long long);
     MAKE_DEFAULT_CLEANER(float);
+    MAKE_DEFAULT_CLEANER(double);
     MAKE_DEFAULT_CLEANER(std::string);
 
 #undef MAKE_DEFAULT_CLEANER
