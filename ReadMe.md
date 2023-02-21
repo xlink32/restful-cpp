@@ -7,7 +7,7 @@ Restful::Apis apis;
 apis.RegisterRestful("/hello",
                     [&](Ctx& ctx, int* a, std::string* b) -> Ret
                     {
-                      if (!code || !msg)
+                      if (!code || !a || !b)
                         ...
 
                       std::cout << "a:" << *a << " b:" << *b;
@@ -20,7 +20,7 @@ apis.RegisterRestful("/hello",
                       ...
                     });
 
-apis.Test("/hello/123/text/This will be ignored/ignore"); // out "a:123 b:text arg:This will be ignored arg:ignore"
+apis.Test("/hello/123/text/arg3/arg4"); // out "a:123 b:text arg:arg3 arg:arg4"
 ```
 
 # Requirements
