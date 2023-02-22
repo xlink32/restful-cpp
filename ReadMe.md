@@ -5,23 +5,35 @@ An example of Restful supporting variable parameters based on C++14. Example:
 ```c++
 Restful::Apis apis;
 apis.RegisterRestful("/hello",
-                    [&](Ctx& ctx, int* a, double* b, std::string* c) -> Ret
+                    [](Ctx& ctx, int* a, double* b) -> Ret
                     {
-                      if (!a || !b || !c)
+                      if (!a || !b)
                         ...
 
-                      std::cout << "a:" << *a << " b:" << *b << " c:" << *c;
+                      std::cout << "a:" << *a << " b:" << *b << std::endl;
+                      ...
+                    })
+
+    .RegisterRestful("/world",
+                    [](Ctx& ctx, long* a, std::string* b) -> Ret
+                    {
+                      if (!a || !b)
+                        ...
+
+                      std::cout << "a:" << *a << " b:" << *b ;
 
                       // Get all remain arguments
                       while (ctx.has_rest_arg())
                          std::cout << " arg:" << ctx.get_rest_arg();
-                      
                       std::cout << std::endl;
                       ...
-                    });
+                    })
 
-apis.Test("/hello/1/2/text/arg3/arg4"); // out "a:1 b:2 c:text arg:arg3 arg:arg4"
+apis.Test("/hello/1/2/3/4"); // out "a:1 b:2"
+apis.Test("/world/1/2/3/4"); // out "a:1 b:2 arg:3 arg:4"
 ```
+
+
 
 # Requirements
 Require at least ```C++14```
@@ -36,7 +48,7 @@ Test on follow compiler in [godbolt compiler explorer](https://gcc.godbolt.org/)
 # Usage
 ## require
 1. function type such as ```Ret (*)(Ctx&, Args*...)```
-2. ```sizeof...(Args) >= 1```
+2. ```sizeof...(Args) >= 0```
 3. or not, ```static_assert``` in ```restful.hpp@RegisterRestful``` will be triggered
 
 ## common funtion
@@ -69,12 +81,11 @@ apis.RegisterRestful("/hello2", [&](Ctx& ctx, int* a) -> Ret{
 });
 ```
 
-## custom object
+## custom object or overload default convertor
 ```c++
-struct CustomObject
+struct CustomOrOverloadDefaultConvertObject
 {
-  int         a;
-  std::string b;
+  int a;
 };
 
 // implement "convert" and "clean" function in namespace Restful::ArgConvertors
@@ -82,26 +93,22 @@ namespace Restful
 {
   namespace ArgConvertors
   {
-    // "123,abc" -> {.a=123, .b="abc"}
     template<>
-    inline void* convert<CustomObject>(std::string&& src)
+    inline void* convert<CustomOrOverloadDefaultConvertObject>(std::string&& src)
     {
       if (src.empty())
         return nullptr;
 
       // URL decode src here, eg "%20" -> " "
 
-      auto ret = new CustomObject();
-      ret->a   = std::atoi(src.data());
-      size_t p = src.find(',');
-      if (p != std::string::npos)
-        ret->b = src.substr(p + 1);
+      auto ret = new CustomOrOverloadDefaultConvertObject();
+      ret->a   = MyAtoi(src.data());
 
       return ret;
     }
 
     template<>
-    void clean<CustomObject>(void* ptr)
+    void clean<CustomOrOverloadDefaultConvertObject>(void* ptr)
     {
       if (ptr)
         delete (CustomObject*)ptr;
@@ -109,10 +116,10 @@ namespace Restful
   } // namespace ArgConvertors
 } // namespace Restful
 
-// Now you can register with CustomObject
+// Now you can register with CustomOrOverloadDefaultConvertObject
 Restful::Apis apis;
 apis.RegisterRestful("/custom",
-                       [](Ctx& ctx, CustomObject* obj) -> Ret
+                       [](Ctx& ctx, CustomOrOverloadDefaultConvertObject* obj) -> Ret
                        {
                          ...
                        });

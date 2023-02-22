@@ -46,8 +46,14 @@ struct Ctx
 
   std::string get_rest_arg()
   {
-    if (rest_begin == std::string::npos || rest_begin >= url.size())
+    if (rest_begin == std::string::npos)
       return {};
+
+    if (rest_begin >= url.size())
+    {
+      rest_begin = std::string::npos;
+      return {};
+    }
 
     std::string remain = url.substr(rest_begin);
     size_t      off    = remain.find('/');
@@ -239,6 +245,11 @@ namespace Restful
 #define REST_ARG(i) (details::get_arg_type<Tuple, i>)args[i]
 
 #if REST_GCC
+      template<typename Callback, typename Tuple>
+      struct invoker<0, Callback, Tuple>
+      {
+        Return_t operator()(Callback&& cb, Arg0_t ctx, std::vector<void*>& args) { return cb(ctx); }
+      };
 #define REST_INVOKER(I, ...)                                                                                           \
   template<typename Callback, typename Tuple>                                                                          \
   struct invoker<I, Callback, Tuple>                                                                                   \
@@ -246,6 +257,11 @@ namespace Restful
     Return_t operator()(Callback&& cb, Arg0_t ctx, std::vector<void*>& args) { return cb(ctx, __VA_ARGS__); }          \
   };
 #else
+      template<typename Sig, typename Tuple>
+      struct invoker<0, std::function<Sig>, Tuple>
+      {
+        Return_t operator()(const std::function<Sig>& cb, Arg0_t ctx, std::vector<void*>& args) { return cb(ctx); }
+      };
 #define REST_INVOKER(I, ...)                                                                                           \
   template<typename Sig, typename Tuple>                                                                               \
   struct invoker<I, std::function<Sig>, Tuple>                                                                         \
@@ -320,7 +336,7 @@ namespace Restful
      * @brief Support std::function
      */
     template<typename... Args>
-    void RegisterRestful(const std::string& path, RestfulCallback_t<Args...>&& callback)
+    Apis& RegisterRestful(const std::string& path, RestfulCallback_t<Args...>&& callback)
     {
       static_assert(sizeof...(Args) <= 15, "Arguments count must <= 15");
 
@@ -348,13 +364,15 @@ namespace Restful
                                            {ArgConvertors::make_convertor<Args>()...},
                                            {ArgConvertors::make_cleaner<Args>()...}),
       };
+
+      return *this;
     }
 
     /**
      * @brief Support common function
      */
     template<typename... Args>
-    void RegisterRestful(const std::string& path, Return_t (*callback)(Arg0_t, Args*...))
+    Apis& RegisterRestful(const std::string& path, Return_t (*callback)(Arg0_t, Args*...))
     {
       return RegisterRestful(path, RestfulCallback_t<Args...>(callback));
     }
@@ -363,7 +381,7 @@ namespace Restful
      * @brief Support lambda
      */
     template<typename Lambda>
-    void RegisterRestful(const std::string& path, Lambda callback)
+    Apis& RegisterRestful(const std::string& path, Lambda callback)
     {
       using func_t = details::function_traits<Lambda>;
       using args_t = typename func_t::args_type;
@@ -377,11 +395,12 @@ namespace Restful
                     "callback's first arg type must equal to Arg0_t");
 
       // assert args count >= 2
-      static_assert(std::tuple_size<args_t>::value >= 2,
-                    "callback's require at least 1 arguments except arg0, eg (Arg0_t, int*)");
+      // static_assert(std::tuple_size<args_t>::value >= 2,
+      //               "callback's require at least 1 arguments except arg0, eg (Arg0_t, int*)");
 
       // check all arguments are pointers
-      static_assert(details::check_tuple<args_t, 1>::value, "callback's Args must be pointer");
+      static_assert(std::tuple_size<args_t>::value == 1 || details::check_tuple<args_t, 1>::value,
+                    "callback's Args must be pointer");
 
       return RegisterRestful(path, typename func_t::function(callback));
     }
