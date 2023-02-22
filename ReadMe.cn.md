@@ -1,8 +1,6 @@
 # restful-cpp
 
-[中文](./ReadMe.cn.md)
-
-An example of automatic conversion of Restful path parameters based on C++14. Example:
+基于C++14实现的Restful路径参数自动转换的例子
 
 ```c++
 Restful::Apis apis;
@@ -24,7 +22,7 @@ apis.RegisterRestful("/hello",
 
                       std::cout << "a:" << *a << " b:" << *b ;
 
-                      // Get all remain arguments
+                      // 获取所有剩余的参数
                       while (ctx.has_rest_arg())
                          std::cout << " arg:" << ctx.get_rest_arg();
                       std::cout << std::endl;
@@ -37,23 +35,23 @@ apis.Test("/world/1/2/3/4"); // out "a:1 b:2 arg:3 arg:4"
 
 
 
-# Requirements
-Require at least ```C++14```
+# 要求
+需要 ```C++14```
 
-Test on follow compiler in [godbolt compiler explorer](https://gcc.godbolt.org/)
+在 [godbolt compiler explorer](https://gcc.godbolt.org/) 平台上对以下编译器测试通过
 * x86-64 GCC 4.9
 * x86-64 GCC 12.1
 * x86-64 Clang 4.0.0
 * x86-64 Clang 11.0.0
 
 
-# Usage
-## require
-1. function type such as ```Ret (*)(Ctx&, Args*...)```
+# 使用方法
+## 要求
+1. 函数类型 ```Ret (*)(Ctx&, Args*...)```
 2. ```sizeof...(Args) >= 0```
-3. or not, ```static_assert``` in ```restful.hpp@RegisterRestful``` will be triggered
+3. 否则, ```restful.hpp@RegisterRestful``` 中的 ```static_assert``` 会报编译器错误
 
-## common funtion
+## 普通函数
 ```c++
 Ret callback(Ctx& ctx, int* a)
 {
@@ -73,7 +71,7 @@ apis.RegisterRestful("/rest", [](Ctx& ctx, int* a) -> Ret{
   ...
 });
 
-// for member function
+// 成员函数
 struct{
   Ret func(Ctx& ctx, int* a);
 } s;
@@ -83,14 +81,14 @@ apis.RegisterRestful("/hello2", [&](Ctx& ctx, int* a) -> Ret{
 });
 ```
 
-## custom object or overload default convertor
+## 自定义对象 或 重载默认转换行为
 ```c++
 struct CustomOrOverloadDefaultConvertObject
 {
   int a;
 };
 
-// implement "convert" and "clean" function in namespace Restful::ArgConvertors
+// 请在Restful::ArgConvertors命名空间下实现"convert"和"clean"函数
 namespace Restful
 {
   namespace ArgConvertors
@@ -101,7 +99,7 @@ namespace Restful
       if (src.empty())
         return nullptr;
 
-      // URL decode src here, eg "%20" -> " "
+      // 可能需要对 URL 进行解码
 
       auto ret = new CustomOrOverloadDefaultConvertObject();
       ret->a   = MyAtoi(src.data());
@@ -118,7 +116,7 @@ namespace Restful
   } // namespace ArgConvertors
 } // namespace Restful
 
-// Now you can register with CustomOrOverloadDefaultConvertObject
+// 然后就可以使用了
 Restful::Apis apis;
 apis.RegisterRestful("/custom",
                        [](Ctx& ctx, CustomOrOverloadDefaultConvertObject* obj) -> Ret
@@ -127,7 +125,7 @@ apis.RegisterRestful("/custom",
                        });
 ```
 
-## Support up to 15 parameters
+## 默认支持最多15个参数
 ```c++
 Restful::Apis apis;
 apis.RegisterRestful("/many",
