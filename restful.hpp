@@ -299,7 +299,7 @@ namespace Restful
                    REST_ARG(7), REST_ARG(8), REST_ARG(9), REST_ARG(10), REST_ARG(11), REST_ARG(12), REST_ARG(13),
                    REST_ARG(14));
 
-#undef TWS_REST_INVOKER
+#undef REST_INVOKER
 #undef REST_ARG
 
       template<typename... Args>
