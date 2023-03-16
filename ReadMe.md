@@ -46,6 +46,8 @@ A Restful framework with automatic parameter conversion similar to SpringBoot im
   */
 ```
 
+# Implementation ideas
+[知乎(Chinese) https://zhuanlan.zhihu.com/p/614595101](https://zhuanlan.zhihu.com/p/614595101)
 
 
 # Require
