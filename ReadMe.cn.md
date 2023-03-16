@@ -1,142 +1,197 @@
 # restful-cpp
 
-基于C++14实现的Restful路径参数自动转换的例子
+[English](./ReadMe.md)
+
+基于C++20实现的类似于SpringBoot的参数转换的Restful框架
+
 
 ```c++
-Restful::Apis apis;
-apis.RegisterRestful("/hello",
-                    [](Ctx& ctx, int* a, double* b) -> Ret
-                    {
-                      if (!a || !b)
-                        ...
+  Apis apis;
+  apis.RegisterRestful("/login",
+                       [](Ctx& ctx, UrlParam<int, "uid"> userId, UrlParam<std::string, "pass"> pass) -> Ret
+                       {
+                         cout << "uid: " << (userId ? *userId : -1) << endl;
+                         cout << "pass: " << (pass ? *pass : "") << endl;
+                         return {};
+                       });
 
-                      std::cout << "a:" << *a << " b:" << *b << std::endl;
-                      ...
-                    })
+  apis.RegisterRestful("/add",
+                       [](Ctx& ctx, UrlParam<float, "val1"> val1, UrlParam<float, "val2"> val2) -> Ret
+                       {
+                         if (!val1 || !val2)
+                           return {};
 
-    .RegisterRestful("/world",
-                    [](Ctx& ctx, long* a, std::string* b) -> Ret
-                    {
-                      if (!a || !b)
-                        ...
+                         float result = *val1 + *val2;
+                         cout << val1 << " + " << val2 << " = " << result << endl;
+                         return {};
+                       });
 
-                      std::cout << "a:" << *a << " b:" << *b ;
+  apis.Test("/login?uid=123&pass=dfsfd");
+  /**
+      uid: 123
+      pass: dfsfd
+  */
 
-                      // 获取所有剩余的参数
-                      while (ctx.has_rest_arg())
-                         std::cout << " arg:" << ctx.get_rest_arg();
-                      std::cout << std::endl;
-                      ...
-                    })
+  apis.Test("/login?uid=456&pass=cvbcvb");
+  /**
+      uid: 456
+      pass: cvbcvb
+  */
 
-apis.Test("/hello/1/2/3/4"); // out "a:1 b:2"
-apis.Test("/world/1/2/3/4"); // out "a:1 b:2 arg:3 arg:4"
+  apis.Test("/add?val1=124&val2=53.6");
+  /**
+      124 + 53.6 = 177.6
+  */
 ```
 
 
 
 # 要求
-需要 ```C++14```
+需要 ```C++20```
 
 在 [godbolt compiler explorer](https://gcc.godbolt.org/) 平台上对以下编译器测试通过
-* x86-64 GCC 4.9
-* x86-64 GCC 12.1
-* x86-64 Clang 4.0.0
-* x86-64 Clang 11.0.0
+* x86-64 GCC 12.2
+* x86-64 GCC 11.1
+* x86-64 Clang 13.0.0
+* x86-64 Clang 15.0.0
+* x86-64 MSVC 2022 (Unsupport due to error C4576)
+
+对于版本<11的GCC和版本<13的Clang可以替换std::from_chars实现std::string_view到T类型的转换应该可以支持
 
 
 # 使用方法
 ## 要求
-1. 函数类型 ```Ret (*)(Ctx&, Args*...)```
+1. 函数类型 ```Ret (*)(Ctx&, Args...)```
 2. ```sizeof...(Args) >= 0```
-3. 否则, ```restful.hpp@RegisterRestful``` 中的 ```static_assert``` 会报编译器错误
+3. ```Args...```必须为
+   ```UrlParam<T,String>```或
+   ```PostParam<T,String>```或
+   ```PostBody<T,String>```或
+   ```PathParam<T,String>```
 
-## 普通函数
+## UrlParam
 ```c++
-Ret callback(Ctx& ctx, int* a)
-{
-  ...
-}
+  apis.RegisterRestful("/login",
+                       [](Ctx& ctx, UrlParam<int, "a"> a, UrlParam<std::string, "b"> b) -> Ret
+                       {
+                          if(!a || !b)
+                            ...
+                          ...
+                          return {};
+                       });
 
-Restful::Apis apis;
-apis.RegisterRestful("/rest", callback);
-// or
-apis.RegisterRestful("/rest", std::function<decltype(callback)>(callback));
+
+  apis.Test("/login?a=123&b=asd"); // -> a:123 b:asd
 ```
 
-## lambda
+## PostParam
 ```c++
-Restful::Apis apis;
-apis.RegisterRestful("/rest", [](Ctx& ctx, int* a) -> Ret{
-  ...
-});
+  apis.RegisterRestful("/mul",
+                       [](Ctx& ctx, PostParam<float, "val1"> val1, PostParam<float, "val2"> val2) -> Ret
+                       {
+                         if (!val1 || !val2)
+                           ...
 
-// 成员函数
-struct{
-  Ret func(Ctx& ctx, int* a);
-} s;
+                         float result = *val1 * *val2;
+                         cout << val1 << " * " << val2 << " = " << result << endl;
+                         return {};
+                       });
 
-apis.RegisterRestful("/hello2", [&](Ctx& ctx, int* a) -> Ret{
-  return s.func(ctx, a);
-});
+  apis.Test("/mul", "val1=124&val2=53.6"); // -> 124 * 53.6 = 6646.4
 ```
 
-## 自定义对象 或 重载默认转换行为
+## PostBody
+```c++
+  apis.RegisterRestful("/body",
+                       [](Ctx& ctx, PostBody<std::string /* JsonObject */> body) -> Ret
+                       {
+                         if (!body)
+                           ...
+                        ...
+                       });
+
+  apis.Test("/body", R"({"a":1, "b":[1, false]})"); // -> {"a":1, "b":[1, false]}
+```
+
+## PathParam
+```c++
+  apis.RegisterRestful("/path2",
+                       [](Ctx& ctx, PathParam<int> a, PathParam<std::string> b, PathParam<float> c) -> Ret
+                       {
+                         cout << "a: " << a << endl;
+                         cout << "b: " << b << endl;
+                         cout << "c: " << c << endl;
+                         while (ctx.has_rest_arg())
+                           cout << "arg: " << ctx.get_rest_arg() << endl;
+                         return {};
+                       });
+
+  apis.Test("/path2/1/2/3/4/5");
+  /**
+      a: 1
+      b: 2
+      c: 3
+      arg: 4
+      arg: 5
+    */
+```
+
+## 自定义对象 或 重载默认转换行为 与 组合使用
 ```c++
 struct CustomOrOverloadDefaultConvertObject
 {
   int a;
 };
 
-// 请在Restful::ArgConvertors命名空间下实现"convert"和"clean"函数
-namespace Restful
+// 请在Restful::ArgConvertors命名空间下实现"base_convertor"和"clean"函数
+namespace Restful::ArgConvertors
 {
-  namespace ArgConvertors
+  template<>
+  inline void* base_convertor<CustomOrOberloadDefaultConvertor>(const std::string_view& src)
   {
-    template<>
-    inline void* convert<CustomOrOverloadDefaultConvertObject>(std::string&& src)
-    {
-      if (src.empty())
-        return nullptr;
+    if (src.empty())
+      return nullptr;
 
-      // 可能需要对 URL 进行解码
+    auto ret = std::make_unique<CustomOrOberloadDefaultConvertor>();
+    ret->x   = src;
+    return ret.release();
 
-      auto ret = new CustomOrOverloadDefaultConvertObject();
-      ret->a   = MyAtoi(src.data());
+    // return success_convert ? ret.release() : nullptr;
+  }
 
-      return ret;
-    }
-
-    template<>
-    void clean<CustomOrOverloadDefaultConvertObject>(void* ptr)
-    {
-      if (ptr)
-        delete (CustomObject*)ptr;
-    }
-  } // namespace ArgConvertors
-} // namespace Restful
+  template<>
+  inline void clean<CustomOrOberloadDefaultConvertor>(void* ptr)
+  {
+    if (ptr)
+      delete (CustomOrOberloadDefaultConvertor*)ptr;
+  }
+} // namespace Restful::ArgConvertors
 
 // 然后就可以使用了
-Restful::Apis apis;
-apis.RegisterRestful("/custom",
-                       [](Ctx& ctx, CustomOrOverloadDefaultConvertObject* obj) -> Ret
+  apis.RegisterRestful("/post",
+                       [](Ctx& ctx,
+                          PathParam<CustomOrOberloadDefaultConvertor>
+                              a,
+                          PostParam<CustomOrOberloadDefaultConvertor, "x">
+                              b,
+                          UrlParam<CustomOrOberloadDefaultConvertor, "x">
+                              c) -> Ret
                        {
-                         ...
+                         cout << "a: " << a << endl;
+                         cout << "b: " << b << endl;
+                         cout << "c: " << c << endl;
+                         return {};
                        });
+
+  apis.Test("/post/hello?x=123", "x=xyz");
+  /**
+    a: hello
+    b: xyz
+    c: 123
+   */
 ```
 
 ## 默认支持最多15个参数
-```c++
-Restful::Apis apis;
-apis.RegisterRestful("/many",
-                       [](Ctx& ctx, 
-                          int* a, int* b, int* c,
-                          int* d, int* e, int* f,
-                          int* g, int* h, int* i,
-                          int* j, int* k, int* l,
-                          int* m, int* n, int* o
-                       ) -> Ret
-                       {
-                         ...
-                       });
-```
+
+
+## 只支持PathParam的但只需C++14的可以看看[backup](./backup)中的老的实现版本

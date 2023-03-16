@@ -1,21 +1,29 @@
 /**
  * @file restful.hpp
  * @author xlink32 (xlink32@foxmail.com)
- * @brief An example of Restful supporting variable parameters based on C++14
- * @version 0.1
- * @date 2023-02-20
+ * @brief A Restful framework with automatic parameter conversion similar to SpringBoot implemented based on C++20
+ * @version 0.2
+ * @date 2023-03-16
  *
  * @copyright Copyright (c) 2023
+ *
  */
 
 #ifndef __RESTFUL_H__
 #define __RESTFUL_H__
 
-#include <cstdlib>
-#include <functional>
-#include <map>
+#include <algorithm>
+#include <charconv>
+#include <cstddef>
+#include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <functional>
 #include <tuple>
+#include <type_traits>
+#include <map>
+#include <unordered_map>
 #include <vector>
 #include <iostream>
 
@@ -37,95 +45,331 @@ struct Ret
 // Callback arg0 type
 struct Ctx
 {
-  std::string url;
-  size_t      rest_begin = 0;
+  std::string      url;
+  std::string_view urlWithoutParams;
+  std::string      contentBody;
+  size_t           rest_begin = 0;
+
+  std::unordered_map<std::string_view, std::string_view> parsedUrlParams;
+  std::unordered_map<std::string_view, std::string_view> parsedContentParams;
+
   Ctx() {}
   ~Ctx() {}
 
-  bool has_rest_arg() const { return rest_begin != std::string::npos; }
+  bool has_rest_arg() const { return rest_begin != std::string_view::npos; }
 
-  std::string get_rest_arg()
+  std::string_view get_rest_arg()
   {
-    if (rest_begin == std::string::npos)
+    if (rest_begin == std::string_view::npos)
       return {};
 
-    if (rest_begin >= url.size())
+    if (rest_begin >= urlWithoutParams.size())
     {
-      rest_begin = std::string::npos;
+      rest_begin = std::string_view::npos;
       return {};
     }
 
-    std::string remain = url.substr(rest_begin);
-    size_t      off    = remain.find('/');
-    if (off == std::string::npos)
+    std::string_view remain = urlWithoutParams.substr(rest_begin);
+    size_t           off    = remain.find('/');
+    if (off == std::string_view::npos)
     {
-      rest_begin = std::string::npos;
+      rest_begin = std::string_view::npos;
       return remain;
     }
     rest_begin += off + 1;
     auto ret = remain.substr(0, off);
     return ret;
   }
+
+  std::string_view get_url_params() const
+  {
+    auto pos = url.find_first_of('?');
+    if (pos == std::string::npos)
+      return {};
+    return std::string_view(url).substr(pos + 1);
+  }
+
+  std::string_view get_content_body() const { return contentBody; }
+
+  void parse_url_params()
+  {
+    std::string_view params = get_url_params();
+    while (!params.empty())
+    {
+      auto pos1 = params.find_first_of('=');
+      auto pos2 = params.find_first_of('&');
+      if (pos1 == std::string_view::npos)
+        break;
+      if (pos2 > pos1 && pos1 != (size_t)0)
+        parsedUrlParams[params.substr(0, pos1)] = params.substr(pos1 + 1, pos2 - pos1 - 1);
+      if (pos2 == std::string_view::npos)
+        break;
+      params = params.substr(pos2 + 1);
+    }
+  }
+
+  void parse_content_params()
+  {
+    std::string_view params = contentBody;
+    while (!params.empty())
+    {
+      auto pos1 = params.find_first_of('=');
+      auto pos2 = params.find_first_of('&');
+      if (pos1 == std::string_view::npos)
+        break;
+      if (pos2 > pos1 && pos1 != (size_t)0)
+        parsedContentParams[params.substr(0, pos1)] = params.substr(pos1 + 1, pos2 - pos1 - 1);
+      if (pos2 == std::string_view::npos)
+        break;
+      params = params.substr(pos2 + 1);
+    }
+  }
+
+  const std::unordered_map<std::string_view, std::string_view>& get_parse_url_params() const { return parsedUrlParams; }
+  const std::unordered_map<std::string_view, std::string_view>& get_parse_content_params() const
+  {
+    return parsedContentParams;
+  }
 };
 
 namespace Restful
 {
-  /**
-   * @brief if wants to add custom object support, please implement "convert" function and "clean" function
-   */
+  namespace details
+  {
+    template<size_t N>
+    struct string_view_literal
+    {
+      char val[N];
+      constexpr string_view_literal(const char (&s)[N]) { std::copy_n(s, N, val); }
+      constexpr std::string_view view() const { return {val, N}; }
+    };
+  } // namespace details
+
+  template<typename T>
+  struct PathParam
+  {
+    using type      = T;
+    using pointer   = T*;
+    using reference = T&;
+
+    pointer obj;
+
+    operator bool() const { return obj != nullptr; }
+
+    reference operator*() { return *obj; }
+
+    pointer operator->() { return obj; }
+
+    PathParam(void* pobj): obj((pointer)pobj) {}
+
+    friend std::ostream& operator<<(std::ostream& os, PathParam<T>& o)
+    {
+      if (o.obj)
+        os << *o;
+      return os;
+    }
+  };
+
+  template<typename T, details::string_view_literal Key>
+  struct UrlParam
+  {
+    constexpr static details::string_view_literal key = Key;
+
+    using type      = T;
+    using pointer   = T*;
+    using reference = T&;
+
+    pointer obj;
+
+    operator bool() const { return obj != nullptr; }
+
+    reference operator*() { return *obj; }
+
+    pointer operator->() { return obj; }
+
+    UrlParam(void* pobj): obj((pointer)pobj) {}
+
+    friend std::ostream& operator<<(std::ostream& os, UrlParam<T, Key>& o)
+    {
+      if (o.obj)
+        os << *o;
+      return os;
+    }
+  };
+
+  template<typename T, details::string_view_literal Key>
+  struct PostParam
+  {
+    constexpr static details::string_view_literal key = Key;
+
+    using type      = T;
+    using pointer   = T*;
+    using reference = T&;
+
+    pointer obj;
+
+    operator bool() const { return obj != nullptr; }
+
+    reference operator*() { return *obj; }
+
+    pointer operator->() { return obj; }
+
+    PostParam(void* pobj): obj((pointer)pobj) {}
+
+    friend std::ostream& operator<<(std::ostream& os, PostParam<T, Key>& o)
+    {
+      if (o.obj)
+        os << *o;
+      return os;
+    }
+  };
+
+  template<typename T>
+  struct PostBody
+  {
+    using type      = T;
+    using pointer   = T*;
+    using reference = T&;
+
+    pointer obj;
+
+    operator bool() const { return obj != nullptr; }
+
+    reference operator*() { return *obj; }
+
+    pointer operator->() { return obj; }
+
+    PostBody(void* pobj): obj((pointer)pobj) {}
+
+    friend std::ostream& operator<<(std::ostream& os, PostBody<T>& o)
+    {
+      if (o.obj)
+        os << *o;
+      return os;
+    }
+  };
+
   namespace ArgConvertors
   {
-    using Convertor_t = void* (*)(std::string&&);
+    using Convertor_t = std::function<void(void*&, Ctx&)>;
     using Cleaner_t   = void (*)(void*);
 
-    template<typename Result>
-    inline void* convert(std::string&& src)
+    // [[ ******************** Base Convertor ********************
+    template<typename T>
+    inline void* base_convertor(const std::string_view& src)
     {
-      return nullptr;
+      throw std::logic_error("Unsupport convetor");
     }
 
     template<>
-    inline void* convert<int>(std::string&& src)
+    inline void* base_convertor<char>(const std::string_view& src)
     {
-      return src.empty() ? nullptr : new int(std::atoi(src.data()));
+      return src.empty() ? nullptr : new char(src[0]);
     }
 
     template<>
-    inline void* convert<long>(std::string&& src)
+    inline void* base_convertor<unsigned char>(const std::string_view& src)
     {
-      return src.empty() ? nullptr : new long(std::atol(src.data()));
+      return src.empty() ? nullptr : new unsigned char(src[0]);
     }
 
-    template<>
-    inline void* convert<long long>(std::string&& src)
-    {
-      return src.empty() ? nullptr : new long long(std::atoll(src.data()));
-    }
+#define REST_MAKE_BASE_CONVERTOR(Type)                                                                                 \
+  template<>                                                                                                           \
+  inline void* base_convertor<Type>(const std::string_view& src)                                                       \
+  {                                                                                                                    \
+    if (src.empty())                                                                                                   \
+      return nullptr;                                                                                                  \
+    auto ret = std::make_unique<Type>();                                                                               \
+    auto ec  = std::from_chars(src.data(), src.data() + src.size(), *ret).ec;                                          \
+    return (ec == std::errc()) ? (void*)ret.release() : nullptr;                                                       \
+  }
+
+    REST_MAKE_BASE_CONVERTOR(short);
+    REST_MAKE_BASE_CONVERTOR(int);
+    REST_MAKE_BASE_CONVERTOR(long);
+    REST_MAKE_BASE_CONVERTOR(long long);
+    REST_MAKE_BASE_CONVERTOR(unsigned short);
+    REST_MAKE_BASE_CONVERTOR(unsigned int);
+    REST_MAKE_BASE_CONVERTOR(unsigned long);
+    REST_MAKE_BASE_CONVERTOR(unsigned long long);
+    REST_MAKE_BASE_CONVERTOR(float);
+    REST_MAKE_BASE_CONVERTOR(double);
+    REST_MAKE_BASE_CONVERTOR(long double);
+
+#undef REST_MAKE_BASE_CONVERTOR
 
     template<>
-    inline void* convert<float>(std::string&& src)
+    inline void* base_convertor<std::string>(const std::string_view& src)
     {
-      return src.empty() ? nullptr : new float(std::atof(src.data()));
+      return src.empty() ? nullptr : new std::string(src);
     }
 
+    // sp: string_view
     template<>
-    inline void* convert<double>(std::string&& src)
+    inline void* base_convertor<std::string_view>(const std::string_view& src)
     {
-      return src.empty() ? nullptr : new double(std::atof(src.data()));
+      return src.empty() ? nullptr : new std::string_view(src);
     }
 
-    template<>
-    inline void* convert<std::string>(std::string&& src)
+    // ]] ******************** Base Convertor ********************
+
+    template<typename T>
+    struct convertor
     {
-      return src.empty() ? nullptr : new std::string(std::move(src));
-    }
+      void operator()(void*&, Ctx&) { throw std::logic_error("Unsupport convetor"); }
+    };
+
+    template<typename T>
+    struct convertor<PathParam<T>>
+    {
+      void operator()(void*& out, Ctx& ctx)
+      {
+        if (!ctx.has_rest_arg())
+          return;
+        out = base_convertor<T>(ctx.get_rest_arg());
+      }
+    };
+
+    template<typename T, details::string_view_literal Key>
+    struct convertor<UrlParam<T, Key>>
+    {
+      void operator()(void*& out, Ctx& ctx)
+      {
+        constexpr std::string_view key    = Key.view().substr(0, Key.view().size() - 1); // Remove Last '\0'
+        auto&                      params = ctx.get_parse_url_params();
+        auto                       it     = params.find(key);
+        if (it == params.end())
+          return;
+        out = base_convertor<T>(it->second);
+      }
+    };
+
+    template<typename T, details::string_view_literal Key>
+    struct convertor<PostParam<T, Key>>
+    {
+      void operator()(void*& out, Ctx& ctx)
+      {
+        constexpr std::string_view key    = Key.view().substr(0, Key.view().size() - 1); // Remove Last '\0'
+        auto&                      params = ctx.get_parse_content_params();
+        auto                       it     = params.find(key);
+        if (it == params.end())
+          return;
+        out = base_convertor<T>(it->second);
+      }
+    };
+
+    template<typename T>
+    struct convertor<PostBody<T>>
+    {
+      void operator()(void*& out, Ctx& ctx) { out = base_convertor<T>(ctx.get_content_body()); }
+    };
 
     template<typename Result>
     void clean(void* ptr)
     {
     }
 
-#define MAKE_DEFAULT_CLEANER(type)                                                                                     \
+#define REST_MAKE_DEFAULT_CLEANER(type)                                                                                \
   template<>                                                                                                           \
   inline void clean<type>(void* ptr)                                                                                   \
   {                                                                                                                    \
@@ -133,26 +377,23 @@ namespace Restful
       delete (type*)ptr;                                                                                               \
   }
 
-    MAKE_DEFAULT_CLEANER(int);
-    MAKE_DEFAULT_CLEANER(long);
-    MAKE_DEFAULT_CLEANER(long long);
-    MAKE_DEFAULT_CLEANER(float);
-    MAKE_DEFAULT_CLEANER(double);
-    MAKE_DEFAULT_CLEANER(std::string);
+    REST_MAKE_DEFAULT_CLEANER(char);
+    REST_MAKE_DEFAULT_CLEANER(short);
+    REST_MAKE_DEFAULT_CLEANER(int);
+    REST_MAKE_DEFAULT_CLEANER(long);
+    REST_MAKE_DEFAULT_CLEANER(long long);
+    REST_MAKE_DEFAULT_CLEANER(unsigned char);
+    REST_MAKE_DEFAULT_CLEANER(unsigned short);
+    REST_MAKE_DEFAULT_CLEANER(unsigned int);
+    REST_MAKE_DEFAULT_CLEANER(unsigned long);
+    REST_MAKE_DEFAULT_CLEANER(unsigned long long);
+    REST_MAKE_DEFAULT_CLEANER(float);
+    REST_MAKE_DEFAULT_CLEANER(double);
+    REST_MAKE_DEFAULT_CLEANER(long double);
+    REST_MAKE_DEFAULT_CLEANER(std::string);
+    REST_MAKE_DEFAULT_CLEANER(std::string_view);
 
-#undef MAKE_DEFAULT_CLEANER
-
-    template<typename T>
-    Convertor_t make_convertor()
-    {
-      return convert<T>;
-    }
-
-    template<typename T>
-    Cleaner_t make_cleaner()
-    {
-      return clean<T>;
-    }
+#undef REST_MAKE_DEFAULT_CLEANER
   } // namespace ArgConvertors
 
   class Apis
@@ -189,52 +430,8 @@ namespace Restful
         using args_type   = std::tuple<Args...>;
       };
 
-      template<typename Tuple, int Begin, int End, bool Cond>
-      struct check_tuple_impl
-      {
-      };
-
-      template<typename Tuple, int Begin, int End>
-      struct check_tuple_impl<Tuple, Begin, End, true>: std::true_type
-      {
-      };
-
-      template<typename Tuple, int Begin, int End>
-      struct check_tuple_impl<Tuple, Begin, End, false>
-          : std::conditional<std::is_pointer<typename std::tuple_element<Begin, Tuple>::type>::value,
-                             check_tuple_impl<Tuple, Begin + 1, End, Begin + 1 >= End>, std::false_type>::type
-      {
-      };
-
-      template<typename Tuple, int Begin, int End = std::tuple_size<Tuple>::value - 1>
-      struct check_tuple: check_tuple_impl<Tuple, Begin, End, Begin <= End - 1>
-      {
-      };
-
-      template<int Target, typename Tuple, int Idx, bool Cond>
-      struct get_args_impl
-      {
-      };
-
-      template<int Target, typename Tuple, int Idx>
-      struct get_args_impl<Target, Tuple, Idx, true>
-      {
-        using type = std::tuple_element<Idx, Tuple>;
-      };
-
-      template<int Target, typename Tuple, int Idx>
-      struct get_args_impl<Target, Tuple, Idx, false>
-          : get_args_impl<Target, Tuple, Idx + 1, Idx + 1 == std::tuple_size<Tuple>::value>
-      {
-      };
-
-      template<int Target, typename... Args>
-      struct get_args: get_args_impl<Target, std::tuple<Args...>, 0, 0 == Target>
-      {
-      };
-
       template<typename Tuple, int I>
-      using get_arg_type = typename std::tuple_element<I, Tuple>::type*;
+      using get_arg_type = typename std::tuple_element<I, Tuple>::type;
 
       template<int I, typename Callback, typename Tuple>
       struct invoker
@@ -242,7 +439,8 @@ namespace Restful
         Return_t operator()(Callback&& cb, Arg0_t ctx, std::vector<void*>& args) { return {}; }
       };
 
-#define REST_ARG(i) (details::get_arg_type<Tuple, i>)args[i]
+#define REST_ARG(i)                                                                                                    \
+  (details::get_arg_type<Tuple, i>) { args[i] }
 
 #if REST_GCC
       template<typename Callback, typename Tuple>
@@ -303,17 +501,17 @@ namespace Restful
 #undef REST_ARG
 
       template<typename... Args>
-      static std::function<Return_t(Arg0_t ctx)> make_invoker(RestfulCallback_t<Args...>&&              callback,
-                                                              std::vector<ArgConvertors::Convertor_t>&& convertors,
-                                                              std::vector<ArgConvertors::Cleaner_t>&&   cleaners)
+      static std::function<Return_t(Arg0_t ctx)> make_invoker(std::function<Return_t(Arg0_t, Args...)>&& callback,
+                                                              std::vector<ArgConvertors::Convertor_t>&&  convertors,
+                                                              std::vector<ArgConvertors::Cleaner_t>&&    cleaners)
       {
         return [callback = std::move(callback), convertors = std::move(convertors),
                 cleaners = std::move(cleaners)](Arg0_t ctx) -> Return_t
         {
           std::vector<void*> args;
-          args.reserve(sizeof...(Args));
+          args.resize(sizeof...(Args));
           for (int i = 0; i < sizeof...(Args); ++i)
-            args.emplace_back(convertors[i](ctx.get_rest_arg()));
+            convertors[i](args[i], ctx);
 
 #if REST_GCC
           Return_t ret = details::invoker<sizeof...(Args), decltype(callback), std::tuple<Args...>>()(
@@ -332,54 +530,28 @@ namespace Restful
     };
 
   public:
-    /**
-     * @brief Support std::function
-     */
     template<typename... Args>
-    Apis& RegisterRestful(const std::string& path, RestfulCallback_t<Args...>&& callback)
+    Apis& RegisterRestful(const std::string& path, std::function<Return_t(Arg0_t, Args...)>&& callback)
     {
       static_assert(sizeof...(Args) <= 15, "Arguments count must <= 15");
 
       if (path.empty() || path[0] != '/')
         throw std::logic_error("url should start with '/'");
 
-      size_t pos = path.find("/{");
-      // if (pos == std::string::npos)
-      //   throw std::logic_error("");
-
-      std::string _path = path.substr(0, pos);
-      while (_path.size() > 1 && _path.back() == '/')
-        _path.pop_back();
-      _path.shrink_to_fit();
-
-      // int argCount = 1;
-      // while ((pos = path.find("/{", pos + 1)) != std::string::npos)
-      //   ++argCount;
-
-      // if (argCount != sizeof...(Args))
-      //   throw std::logic_error("args count in path does not equal to which in callback");
-
-      mRestfulCallbackMap[_path] = {
-          .invoker = details::make_invoker(std::move(callback),
-                                           {ArgConvertors::make_convertor<Args>()...},
-                                           {ArgConvertors::make_cleaner<Args>()...}),
+      mRestfulCallbackMap[path] = {
+          .invoker = details::make_invoker(std::move(callback), {ArgConvertors::convertor<Args>()...},
+                                           {ArgConvertors::clean<typename Args::type>...}),
       };
 
       return *this;
     }
 
-    /**
-     * @brief Support common function
-     */
     template<typename... Args>
-    Apis& RegisterRestful(const std::string& path, Return_t (*callback)(Arg0_t, Args*...))
+    Apis& RegisterRestful(const std::string& path, Return_t (*callback)(Arg0_t, Args...))
     {
       return RegisterRestful(path, RestfulCallback_t<Args...>(callback));
     }
 
-    /**
-     * @brief Support lambda
-     */
     template<typename Lambda>
     Apis& RegisterRestful(const std::string& path, Lambda callback)
     {
@@ -394,26 +566,24 @@ namespace Restful
       static_assert(std::is_same<typename std::tuple_element<0, args_t>::type, Arg0_t>::value,
                     "callback's first arg type must equal to Arg0_t");
 
-      // assert args count >= 2
-      // static_assert(std::tuple_size<args_t>::value >= 2,
-      //               "callback's require at least 1 arguments except arg0, eg (Arg0_t, int*)");
-
-      // check all arguments are pointers
-      static_assert(std::tuple_size<args_t>::value == 1 || details::check_tuple<args_t, 1>::value,
-                    "callback's Args must be pointer");
-
       return RegisterRestful(path, typename func_t::function(callback));
     }
 
-    void Test(const std::string& path)
+    void Test(const std::string& path, const std::string& contentBody = "")
     {
       if (path.empty() || path[0] != '/')
         return;
 
       typename std::decay<Arg0_t>::type ctx;
-      ctx.url    = path;
-      auto   it  = mRestfulCallbackMap.find(path);
-      size_t pos = path.size();
+      ctx.url              = path;
+      ctx.urlWithoutParams = std::string_view(ctx.url).substr(0, ctx.url.find_first_of('?'));
+      ctx.contentBody      = contentBody;
+      ctx.parse_url_params();
+      ctx.parse_content_params();
+
+      std::string _path = std::string(ctx.urlWithoutParams);
+      auto        it    = mRestfulCallbackMap.find(_path);
+      size_t      pos   = path.size();
       for (;;)
       {
         if (it != mRestfulCallbackMap.end())
@@ -424,11 +594,11 @@ namespace Restful
           return;
         }
 
-        pos = path.rfind('/', pos - 1);
+        pos = _path.rfind('/', pos - 1);
         if (pos == 0 || pos == std::string::npos)
           break;
 
-        it = mRestfulCallbackMap.find(path.substr(0, pos));
+        it = mRestfulCallbackMap.find(_path.substr(0, pos));
       }
       std::cout << "Not found: " << path << std::endl;
     }
