@@ -7,41 +7,66 @@
 
 ```c++
   Apis apis;
-  apis.RegisterRestful("/login",
+  apis.RegisterRestful("/urlparam",
                        [](Ctx& ctx, UrlParam<int, "uid"> userId, UrlParam<std::string, "pass"> pass) -> Ret
                        {
                          cout << "uid: " << (userId ? *userId : -1) << endl;
                          cout << "pass: " << (pass ? *pass : "") << endl;
                          return {};
                        });
-
-  apis.RegisterRestful("/add",
-                       [](Ctx& ctx, UrlParam<float, "val1"> val1, UrlParam<float, "val2"> val2) -> Ret
-                       {
-                         if (!val1 || !val2)
-                           return {};
-
-                         float result = *val1 + *val2;
-                         cout << val1 << " + " << val2 << " = " << result << endl;
-                         return {};
-                       });
-
-  apis.Test("/login?uid=123&pass=dfsfd");
+  apis.Test("/urlparam?uid=123&pass=dfsfd");
   /**
       uid: 123
       pass: dfsfd
   */
 
-  apis.Test("/login?uid=456&pass=cvbcvb");
+  apis.RegisterRestful("/postparam",
+                       [](Ctx& ctx, UrlParam<float, "val1"> val1, PostParam<float, "val2"> val2, PostParam<float, "val3"> val3) -> Ret
+                       {
+                         if (!val1 || !val2 || !val3)
+                           return {};
+
+                         float result = *val1 + *val2 + *val3;
+                         cout << val1 << " + " << val2 << " + " << val3 << " = " << result << endl;
+                         return {};
+                       });
+  apis.Test("/postparam?val1=124", "val2=53.6&val3=123");
   /**
-      uid: 456
-      pass: cvbcvb
+      124 + 53.6 + 123 = 300.6
   */
 
-  apis.Test("/add?val1=124&val2=53.6");
+  apis.RegisterRestful("/postbody",
+                       [](Ctx& ctx, PostBody<std::string_view /* JsonObject */> body) -> Ret
+                       {
+                         if (!body)
+                           return {};
+
+                         cout << body << endl;
+                         return {};
+                       });
+  apis.Test("/postbody", R"({"a":1, "b":[1, false]})");
   /**
-      124 + 53.6 = 177.6
+      {"a":1, "b":[1, false]}
   */
+
+  apis.RegisterRestful("/pathparam",
+                       [](Ctx& ctx, PathParam<int> a, PathParam<std::string> b, PathParam<float> c) -> Ret
+                       {
+                         cout << "a: " << a << endl;
+                         cout << "b: " << b << endl;
+                         cout << "c: " << c << endl;
+                         while (ctx.has_rest_arg())
+                           cout << "arg: " << ctx.get_rest_arg() << endl;
+                         return {};
+                       });
+  apis.Test("/pathparam/1/2/3/4/5");
+  /**
+      a: 1
+      b: 2
+      c: 3
+      arg: 4
+      arg: 5
+    */
 ```
 
 
