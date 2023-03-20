@@ -5,7 +5,7 @@
 
 A Restful framework with automatic parameter conversion similar to SpringBoot implemented based on C++20
 
-###Example：
+### Example：
 ```c++
   Apis apis;
   apis.RegisterRestful("/urlparam",
@@ -95,8 +95,8 @@ because which are using std::from_chars
 3. ```Args...```must be
    ```UrlParam<T,String>```or
    ```PostParam<T,String>```or
-   ```PostBody<T,String>```or
-   ```PathParam<T,String>```
+   ```PostBody<T>```or
+   ```PathParam<T>```
 
 ## UrlParam
 ```c++

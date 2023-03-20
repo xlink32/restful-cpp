@@ -4,7 +4,7 @@
 
 基于C++20实现的类似于SpringBoot的参数转换的Restful框架
 
-###例子：
+### 例子：
 ```c++
   Apis apis;
   apis.RegisterRestful("/urlparam",
@@ -94,8 +94,8 @@
 3. ```Args...```必须为
    ```UrlParam<T,String>```或
    ```PostParam<T,String>```或
-   ```PostBody<T,String>```或
-   ```PathParam<T,String>```
+   ```PostBody<T>```或
+   ```PathParam<T>```
 
 ## UrlParam
 ```c++
