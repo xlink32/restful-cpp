@@ -2,7 +2,7 @@
  * @file restful.hpp
  * @author xlink32 (xlink32@foxmail.com)
  * @brief A Restful framework with automatic parameter conversion similar to SpringBoot implemented based on C++20
- * @version 0.2
+ * @version 0.3
  * @date 2023-03-16
  *
  * @copyright Copyright (c) 2023
@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -42,117 +43,256 @@ struct Ret
 {
 };
 
+namespace Restful
+{
+  class Apis;
+}
+
 // Callback arg0 type
 struct Ctx
 {
-  std::string      url;
-  std::string_view urlWithoutParams;
-  std::string      contentBody;
-  size_t           rest_begin = 0;
+  friend class Restful::Apis;
 
-  std::unordered_map<std::string_view, std::string_view> parsedUrlParams;
-  std::unordered_map<std::string_view, std::string_view> parsedContentParams;
-
-  Ctx() {}
+  Ctx(const std::string& _url, const std::string& _contentBody): url(_url), contentBody(_contentBody)
+  {
+    urlParamBegin = url.find_first_of('?');
+    if (urlParamBegin == std::string::npos)
+      urlWithoutParams = std::string_view(url);
+    else
+      urlWithoutParams = std::string_view(url).substr(0, urlParamBegin++);
+  }
   ~Ctx() {}
 
-  bool has_rest_arg() const { return rest_begin != std::string_view::npos; }
+  bool HasRestArg() const { return restBegin != std::string_view::npos; }
 
-  std::string_view get_rest_arg()
+  std::string_view GetRestArg()
   {
-    if (rest_begin == std::string_view::npos)
+    if (restBegin == std::string_view::npos)
       return {};
 
-    if (rest_begin >= urlWithoutParams.size())
+    if (restBegin >= urlWithoutParams.size())
     {
-      rest_begin = std::string_view::npos;
+      restBegin = std::string_view::npos;
       return {};
     }
 
-    std::string_view remain = urlWithoutParams.substr(rest_begin);
+    std::string_view remain = urlWithoutParams.substr(restBegin);
     size_t           off    = remain.find('/');
     if (off == std::string_view::npos)
     {
-      rest_begin = std::string_view::npos;
+      restBegin = std::string_view::npos;
       return remain;
     }
-    rest_begin += off + 1;
+    restBegin += off + 1;
     auto ret = remain.substr(0, off);
     return ret;
   }
 
-  std::string_view get_url_params() const
+  std::string_view GetUrlWithoutParams() const { return urlWithoutParams; }
+
+  std::string_view GetRawUrlParams() const
   {
-    auto pos = url.find_first_of('?');
-    if (pos == std::string::npos)
+    if (urlWithoutParams.size() < url.size())
+      return std::string_view(url).substr(urlWithoutParams.size() + 1);
+    return {};
+  }
+
+  std::string_view GetRawContentBody() const { return contentBody; }
+
+  std::string_view GetUrlParam(const std::string_view& key)
+  {
+    auto it = parsedParams.find({ParamKey::Url, key});
+    if (it != parsedParams.end())
+      return it->second;
+
+    if (urlParamBegin >= url.size())
       return {};
-    return std::string_view(url).substr(pos + 1);
-  }
 
-  std::string_view get_content_body() const { return contentBody; }
-
-  void parse_url_params()
-  {
-    std::string_view params = get_url_params();
+    std::string_view params = std::string_view(url).substr(urlParamBegin);
     while (!params.empty())
     {
       auto pos1 = params.find_first_of('=');
       auto pos2 = params.find_first_of('&');
       if (pos1 == std::string_view::npos)
-        break;
+      {
+        urlParamBegin = std::string_view::npos;
+        return {};
+      }
       if (pos2 > pos1 && pos1 != (size_t)0)
-        parsedUrlParams[params.substr(0, pos1)] = params.substr(pos1 + 1, pos2 - pos1 - 1);
+      {
+        std::string_view _key   = params.substr(0, pos1);
+        std::string_view _value = params.substr(pos1 + 1, pos2 - pos1 - 1);
+        parsedParams.insert({
+            {ParamKey::Url, _key},
+            _value
+        });
+        if (key == _key)
+          return _value;
+      }
       if (pos2 == std::string_view::npos)
-        break;
+      {
+        urlParamBegin = std::string_view::npos;
+        return {};
+      }
+      else
+        urlParamBegin += pos2 + 1;
+
       params = params.substr(pos2 + 1);
     }
+    return {};
   }
 
-  void parse_content_params()
+  std::string_view GetContentParam(const std::string_view& key)
   {
-    std::string_view params = contentBody;
+    auto it = parsedParams.find({ParamKey::Content, key});
+    if (it != parsedParams.end())
+      return it->second;
+
+    if (contentParamBegin >= contentBody.size())
+      return {};
+
+    std::string_view params = std::string_view(contentBody).substr(contentParamBegin);
     while (!params.empty())
     {
       auto pos1 = params.find_first_of('=');
       auto pos2 = params.find_first_of('&');
       if (pos1 == std::string_view::npos)
-        break;
+      {
+        contentParamBegin = std::string_view::npos;
+        return {};
+      }
       if (pos2 > pos1 && pos1 != (size_t)0)
-        parsedContentParams[params.substr(0, pos1)] = params.substr(pos1 + 1, pos2 - pos1 - 1);
+      {
+        std::string_view _key   = params.substr(0, pos1);
+        std::string_view _value = params.substr(pos1 + 1, pos2 - pos1 - 1);
+        parsedParams.insert({
+            {ParamKey::Content, _key},
+            _value
+        });
+        if (key == _key)
+          return _value;
+      }
       if (pos2 == std::string_view::npos)
-        break;
+      {
+        contentParamBegin = std::string_view::npos;
+        return {};
+      }
+      else
+        contentParamBegin += pos2 + 1;
+
       params = params.substr(pos2 + 1);
     }
+    return {};
   }
 
-  const std::unordered_map<std::string_view, std::string_view>& get_parse_url_params() const { return parsedUrlParams; }
-  const std::unordered_map<std::string_view, std::string_view>& get_parse_content_params() const
+protected:
+  void adjustRestBegin(size_t pos) { restBegin = pos; }
+
+  std::string      url;
+  std::string_view urlWithoutParams;
+  std::string      contentBody;
+  size_t           restBegin         = 0;
+  size_t           urlParamBegin     = 0;
+  size_t           contentParamBegin = 0;
+
+  struct ParamKey
   {
-    return parsedContentParams;
-  }
+    enum EParam : std::uint8_t
+    {
+      Url,
+      Content,
+    } type;
+    std::string_view key;
+
+    struct hash
+    {
+      size_t operator()(const ParamKey& key) const noexcept
+      {
+        size_t seed = std::hash<std::uint8_t>()(key.type);
+        seed ^= std::hash<std::string_view>()(key.key) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        return seed;
+      }
+    };
+
+    friend bool operator==(const ParamKey& a, const ParamKey& b) noexcept { return a.type == b.type && a.key == b.key; }
+  };
+
+  std::unordered_map<ParamKey, std::string_view, ParamKey::hash> parsedParams;
 };
 
 namespace Restful
 {
+  /**
+   * @brief Require Tag
+   * @brief use to declare a Param is require
+   */
+  struct Require
+  {
+  };
+
+  template<typename T, typename _ = void>
+  struct DefaultValue
+  {
+  };
+
+  /**
+   * @brief Default Value Tag
+   * @tparam T Value type
+   *
+   * @example
+    struct MyDefaultInt: DefaultValue<int>
+    {
+      static int get_default_value() { return -1; }
+    };
+   */
+  template<typename T>
+  struct DefaultValue<T>
+  {
+  };
+
   namespace details
   {
     template<size_t N>
-    struct string_view_literal
+    struct string_literal
     {
+      static_assert(N > 1, "string_literal should not be empty");
+
       char val[N];
-      constexpr string_view_literal(const char (&s)[N]) { std::copy_n(s, N, val); }
-      constexpr std::string_view view() const { return {val, N}; }
+      constexpr string_literal(const char (&s)[N]) { std::copy_n(s, N, val); }
+      constexpr std::string_view view() const { return {val, N - 1}; }
+    };
+
+    template<typename T, typename Tuple, size_t Begin, size_t End, bool Stop>
+    struct get_default_value_impl
+    {
+    };
+    template<typename T, typename Tuple, size_t Begin, size_t End>
+    struct get_default_value_impl<T, Tuple, Begin, End, true>
+    {
+      using type = void;
+    };
+    template<typename T, typename Tuple, size_t Begin, size_t End>
+    struct get_default_value_impl<T, Tuple, Begin, End, false>
+        : std::conditional_t<std::is_base_of_v<DefaultValue<T>, std::tuple_element_t<Begin, Tuple>>,
+                             std::tuple_element<Begin, Tuple>,
+                             get_default_value_impl<T, Tuple, Begin + 1, End, Begin + 1 >= End>>
+    {
+    };
+    template<typename T, typename Tuple, size_t Begin = 0, size_t End = std::tuple_size_v<Tuple>>
+    struct get_default_value: get_default_value_impl<T, Tuple, Begin, End, Begin >= End>
+    {
     };
   } // namespace details
 
-  template<typename T>
+  template<typename T, typename... Args>
   struct PathParam
   {
     using type      = T;
     using pointer   = T*;
     using reference = T&;
 
-    pointer obj;
+    static constexpr bool isRequire = (std::is_same<Args, Require>::value || ...);
+    pointer               obj;
 
     operator bool() const { return obj != nullptr; }
 
@@ -162,24 +302,34 @@ namespace Restful
 
     PathParam(void* pobj): obj((pointer)pobj) {}
 
-    friend std::ostream& operator<<(std::ostream& os, PathParam<T>& o)
+    friend std::ostream& operator<<(std::ostream& os, PathParam<T, Args...>& o)
     {
       if (o.obj)
         os << *o;
       return os;
     }
+
+    static T* MakeDefaultValue()
+    {
+      using type = typename details::get_default_value<T, std::tuple<Args...>>::type;
+      if constexpr (std::is_same_v<type, void>)
+        return nullptr;
+      else
+        return new T(type::get_default_value());
+    }
   };
 
-  template<typename T, details::string_view_literal Key>
+  template<typename T, details::string_literal Key, typename... Args>
   struct UrlParam
   {
-    constexpr static details::string_view_literal key = Key;
+    constexpr static details::string_literal key = Key;
 
     using type      = T;
     using pointer   = T*;
     using reference = T&;
 
-    pointer obj;
+    static constexpr bool isRequire = (std::is_same<Args, Require>::value || ...);
+    pointer               obj;
 
     operator bool() const { return obj != nullptr; }
 
@@ -189,24 +339,34 @@ namespace Restful
 
     UrlParam(void* pobj): obj((pointer)pobj) {}
 
-    friend std::ostream& operator<<(std::ostream& os, UrlParam<T, Key>& o)
+    friend std::ostream& operator<<(std::ostream& os, UrlParam<T, Key, Args...>& o)
     {
       if (o.obj)
         os << *o;
       return os;
     }
+
+    static T* MakeDefaultValue()
+    {
+      using type = typename details::get_default_value<T, std::tuple<Args...>>::type;
+      if constexpr (std::is_same_v<type, void>)
+        return nullptr;
+      else
+        return new T(type::get_default_value());
+    }
   };
 
-  template<typename T, details::string_view_literal Key>
+  template<typename T, details::string_literal Key, typename... Args>
   struct PostParam
   {
-    constexpr static details::string_view_literal key = Key;
+    constexpr static details::string_literal key = Key;
 
     using type      = T;
     using pointer   = T*;
     using reference = T&;
 
-    pointer obj;
+    static constexpr bool isRequire = (std::is_same<Args, Require>::value || ...);
+    pointer               obj;
 
     operator bool() const { return obj != nullptr; }
 
@@ -216,22 +376,32 @@ namespace Restful
 
     PostParam(void* pobj): obj((pointer)pobj) {}
 
-    friend std::ostream& operator<<(std::ostream& os, PostParam<T, Key>& o)
+    friend std::ostream& operator<<(std::ostream& os, PostParam<T, Key, Args...>& o)
     {
       if (o.obj)
         os << *o;
       return os;
     }
+
+    static T* MakeDefaultValue()
+    {
+      using type = typename details::get_default_value<T, std::tuple<Args...>>::type;
+      if constexpr (std::is_same_v<type, void>)
+        return nullptr;
+      else
+        return new T(type::get_default_value());
+    }
   };
 
-  template<typename T>
+  template<typename T, typename... Args>
   struct PostBody
   {
     using type      = T;
     using pointer   = T*;
     using reference = T&;
 
-    pointer obj;
+    static constexpr bool isRequire = (std::is_same<Args, Require>::value || ...);
+    pointer               obj;
 
     operator bool() const { return obj != nullptr; }
 
@@ -241,17 +411,26 @@ namespace Restful
 
     PostBody(void* pobj): obj((pointer)pobj) {}
 
-    friend std::ostream& operator<<(std::ostream& os, PostBody<T>& o)
+    friend std::ostream& operator<<(std::ostream& os, PostBody<T, Args...>& o)
     {
       if (o.obj)
         os << *o;
       return os;
     }
+
+    static T* MakeDefaultValue()
+    {
+      using type = typename details::get_default_value<T, std::tuple<Args...>>::type;
+      if constexpr (std::is_same_v<type, void>)
+        return nullptr;
+      else
+        return new T(type::get_default_value());
+    }
   };
 
   namespace ArgConvertors
   {
-    using Convertor_t = std::function<void(void*&, Ctx&)>;
+    using Convertor_t = std::function<bool(void*&, Ctx&, int)>;
     using Cleaner_t   = void (*)(void*);
 
     // [[ ******************** Base Convertor ********************
@@ -316,52 +495,105 @@ namespace Restful
     template<typename T>
     struct convertor
     {
-      void operator()(void*&, Ctx&) { throw std::logic_error("Unsupport convetor"); }
+      bool operator()(void*&, Ctx&, int) { throw std::logic_error("Unsupport convetor"); }
     };
 
-    template<typename T>
-    struct convertor<PathParam<T>>
+    template<typename T, typename... Args>
+    struct convertor<PathParam<T, Args...>>
     {
-      void operator()(void*& out, Ctx& ctx)
+      bool operator()(void*& out, Ctx& ctx, int idx)
       {
-        if (!ctx.has_rest_arg())
-          return;
-        out = base_convertor<T>(ctx.get_rest_arg());
+        if constexpr (PathParam<T, Args...>::isRequire)
+        {
+          if (!ctx.HasRestArg())
+            return false;
+          out = base_convertor<T>(ctx.GetRestArg());
+
+          if (out == nullptr)
+            std::cout << "Require path param: " << idx << std::endl;
+
+          return out != nullptr;
+        }
+        else // optional
+        {
+          if (!ctx.HasRestArg())
+            return true;
+          void* ptr = base_convertor<T>(ctx.GetRestArg());
+          out       = ptr ? ptr : (void*)PathParam<T, Args...>::MakeDefaultValue();
+          return true;
+        }
       }
     };
 
-    template<typename T, details::string_view_literal Key>
-    struct convertor<UrlParam<T, Key>>
+    template<typename T, details::string_literal Key, typename... Args>
+    struct convertor<UrlParam<T, Key, Args...>>
     {
-      void operator()(void*& out, Ctx& ctx)
+      bool operator()(void*& out, Ctx& ctx, int idx)
       {
-        constexpr std::string_view key    = Key.view().substr(0, Key.view().size() - 1); // Remove Last '\0'
-        auto&                      params = ctx.get_parse_url_params();
-        auto                       it     = params.find(key);
-        if (it == params.end())
-          return;
-        out = base_convertor<T>(it->second);
+        constexpr std::string_view key = Key.view();
+        if constexpr (UrlParam<T, Key, Args...>::isRequire)
+        {
+          out = base_convertor<T>(ctx.GetUrlParam(key));
+
+          if (out == nullptr)
+            std::cout << "Require url param: " << key << std::endl;
+
+          return out != nullptr;
+        }
+        else // optional
+        {
+          void* ptr = base_convertor<T>(ctx.GetUrlParam(key));
+          out       = ptr ? ptr : (void*)UrlParam<T, Key, Args...>::MakeDefaultValue();
+          return true;
+        }
       }
     };
 
-    template<typename T, details::string_view_literal Key>
-    struct convertor<PostParam<T, Key>>
+    template<typename T, details::string_literal Key, typename... Args>
+    struct convertor<PostParam<T, Key, Args...>>
     {
-      void operator()(void*& out, Ctx& ctx)
+      bool operator()(void*& out, Ctx& ctx, int idx)
       {
-        constexpr std::string_view key    = Key.view().substr(0, Key.view().size() - 1); // Remove Last '\0'
-        auto&                      params = ctx.get_parse_content_params();
-        auto                       it     = params.find(key);
-        if (it == params.end())
-          return;
-        out = base_convertor<T>(it->second);
+        constexpr std::string_view key = Key.view();
+        if constexpr (PostParam<T, Key, Args...>::isRequire)
+        {
+          out = base_convertor<T>(ctx.GetContentParam(key));
+
+          if (out == nullptr)
+            std::cout << "Require post param: " << key << std::endl;
+
+          return out != nullptr;
+        }
+        else // optional
+        {
+          void* ptr = base_convertor<T>(ctx.GetContentParam(key));
+          out       = ptr ? ptr : (void*)PostParam<T, Key, Args...>::MakeDefaultValue();
+          return true;
+        }
       }
     };
 
-    template<typename T>
-    struct convertor<PostBody<T>>
+    template<typename T, typename... Args>
+    struct convertor<PostBody<T, Args...>>
     {
-      void operator()(void*& out, Ctx& ctx) { out = base_convertor<T>(ctx.get_content_body()); }
+      bool operator()(void*& out, Ctx& ctx, int idx)
+      {
+        if constexpr (PostBody<T, Args...>::isRequire)
+        {
+          out = base_convertor<T>(ctx.GetRawContentBody());
+
+          if (out == nullptr)
+            std::cout << "Require post body" << std::endl;
+
+          return out != nullptr;
+        }
+        else // optional
+        {
+          void* ptr = base_convertor<T>(ctx.GetRawContentBody());
+          out       = ptr ? ptr : (void*)PostBody<T, Args...>::MakeDefaultValue();
+          return true;
+        }
+      }
     };
 
     template<typename Result>
@@ -511,7 +743,14 @@ namespace Restful
           std::vector<void*> args;
           args.resize(sizeof...(Args));
           for (int i = 0; i < sizeof...(Args); ++i)
-            convertors[i](args[i], ctx);
+          {
+            if (!convertors[i](args[i], ctx, i))
+            {
+              for (int j = 0; j <= i; ++j)
+                cleaners[j](args[j]);
+              return {}; // "Require is not satisfied" -> HTTP/400 Bad Request
+            }
+          }
 
 #if REST_GCC
           Return_t ret = details::invoker<sizeof...(Args), decltype(callback), std::tuple<Args...>>()(
@@ -574,14 +813,9 @@ namespace Restful
       if (path.empty() || path[0] != '/')
         return;
 
-      typename std::decay<Arg0_t>::type ctx;
-      ctx.url              = path;
-      ctx.urlWithoutParams = std::string_view(ctx.url).substr(0, ctx.url.find_first_of('?'));
-      ctx.contentBody      = contentBody;
-      ctx.parse_url_params();
-      ctx.parse_content_params();
+      typename std::decay<Arg0_t>::type ctx(path, contentBody);
 
-      std::string _path = std::string(ctx.urlWithoutParams);
+      std::string _path = std::string(ctx.GetUrlWithoutParams());
       auto        it    = mRestfulCallbackMap.find(_path);
       size_t      pos   = path.size();
       for (;;)
@@ -589,7 +823,7 @@ namespace Restful
         if (it != mRestfulCallbackMap.end())
         {
           std::cout << "url: [" << path << "] -> [" << it->first << "]  " << std::endl;
-          ctx.rest_begin = pos + 1;
+          ctx.adjustRestBegin(pos + 1);
           it->second.invoker(ctx);
           return;
         }

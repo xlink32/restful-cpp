@@ -3,11 +3,11 @@
 using namespace std;
 using namespace Restful;
 
-struct CustomOrOberloadDefaultConvertor
+struct CustomOrOverloadDefaultConvertor
 {
   std::string x;
 
-  friend std::ostream& operator<<(std::ostream& os, const CustomOrOberloadDefaultConvertor& o)
+  friend std::ostream& operator<<(std::ostream& os, const CustomOrOverloadDefaultConvertor& o)
   {
     os << o.x;
     return os;
@@ -17,12 +17,12 @@ struct CustomOrOberloadDefaultConvertor
 namespace Restful::ArgConvertors
 {
   template<>
-  inline void* base_convertor<CustomOrOberloadDefaultConvertor>(const std::string_view& src)
+  inline void* base_convertor<CustomOrOverloadDefaultConvertor>(const std::string_view& src)
   {
     if (src.empty())
       return nullptr;
 
-    auto ret = std::make_unique<CustomOrOberloadDefaultConvertor>();
+    auto ret = std::make_unique<CustomOrOverloadDefaultConvertor>();
     ret->x   = src;
     return ret.release();
 
@@ -30,10 +30,10 @@ namespace Restful::ArgConvertors
   }
 
   template<>
-  inline void clean<CustomOrOberloadDefaultConvertor>(void* ptr)
+  inline void clean<CustomOrOverloadDefaultConvertor>(void* ptr)
   {
     if (ptr)
-      delete (CustomOrOberloadDefaultConvertor*)ptr;
+      delete (CustomOrOverloadDefaultConvertor*)ptr;
   }
 } // namespace Restful::ArgConvertors
 
@@ -42,11 +42,11 @@ int main()
   Apis apis;
   apis.RegisterRestful("/post",
                        [](Ctx& ctx,
-                          PathParam<CustomOrOberloadDefaultConvertor>
+                          PathParam<CustomOrOverloadDefaultConvertor>
                               a,
-                          PostParam<CustomOrOberloadDefaultConvertor, "x">
+                          PostParam<CustomOrOverloadDefaultConvertor, "x">
                               b,
-                          UrlParam<CustomOrOberloadDefaultConvertor, "x">
+                          UrlParam<CustomOrOverloadDefaultConvertor, "x">
                               c) -> Ret
                        {
                          cout << "a: " << a << endl;
