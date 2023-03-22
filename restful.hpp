@@ -634,9 +634,6 @@ namespace Restful
     using Return_t = Ret;
     using Arg0_t   = Ctx&;
 
-    template<typename... Args>
-    using RestfulCallback_t = std::function<Return_t(Arg0_t, Args*...)>;
-
   private:
     struct ApiInfo
     {
@@ -788,7 +785,7 @@ namespace Restful
     template<typename... Args>
     Apis& RegisterRestful(const std::string& path, Return_t (*callback)(Arg0_t, Args...))
     {
-      return RegisterRestful(path, RestfulCallback_t<Args...>(callback));
+      return RegisterRestful(path, std::function<Return_t(Arg0_t, Args...)>(callback));
     }
 
     template<typename Lambda>
